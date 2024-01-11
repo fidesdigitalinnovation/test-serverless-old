@@ -1,0 +1,10 @@
+type Query {
+     getMyProfile(name: String): MyProfile
+}
+
+type MyProfile  {
+  id: ID
+  name: String
+  screenName: String
+  surname: String
+}

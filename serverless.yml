@@ -1,0 +1,72 @@
+service: test-serverless-v3
+frameworkVersion: '3'
+provider:
+  name: aws
+  runtime: nodejs14.x
+  stage: ${opt:stage, 'dev'}
+  region: 'eu-west-1'
+  timeout: 300
+  # vpc:
+  #   securityGroupIds:
+  #     - Fn::GetAtt: [DatabaseVpcSecurityGroup, GroupId]
+  #   subnetIds:
+  #     - Ref: SubnetAPrivate
+  #     - Ref: SubnetBPrivate
+  # environment:
+    # DATABASE_URL: { Fn::GetAtt: [Database, Endpoint.Address] }
+    # DATABASE_NAME: '${self:custom.dbName}'
+    # SECRET_ARN: !Ref DbSecret
+    # DATABASE_ARN: 
+    #   Fn::Join:  
+    #      - ""  
+    #      - - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:"  
+    #        - !Select [0, !Split ['.', !GetAtt Database.Endpoint.Address]]
+  # iamRoleStatements:
+  #   - Effect: Allow
+  #     Action:
+  #       - xray:PutTraceSegments
+  #       - xray:PutTelemetryRecords
+  #     Resource: '*'
+functions:
+  myProfile:
+     handler: src/functions/profile/get-profile.handler
+    #  iamRoleStatements:
+    #   - Effect: Allow
+    #     Action: rds-data:*
+    #     Resource: '*'
+      # - Effect: Allow
+      #   Action: secretsmanager:*
+      #   Resource:
+      #     - Ref: DbSecret
+plugins:
+  - serverless-esbuild
+  - serverless-appsync-plugin
+  - serverless-iam-roles-per-function
+  - serverless-export-env
+  # - serverless-dotenv-plugin
+  
+
+custom:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: true
+    exclude:
+      - 'aws-sdk'
+    target: 'node14'
+    define: 
+      'require.resolve': undefined
+    platform: 'node'
+
+  poolName: ${self:provider.stage}SimpleCMS 
+  # databaseArn: 'arn:aws:rds:${self:provider.stage}'
+  # secret: "SecretSimpleCMS"
+  # dbName: "simpleCMS"
+  region: ${self:provider.region}
+  appSync:
+      - ${file(serverless.appsync-api.yml)}
+    
+resources:
+  - ${file(resources/dynamo-db.yml)}  
+  # Cognito
+  - ${file(resources/cognito.yml)}

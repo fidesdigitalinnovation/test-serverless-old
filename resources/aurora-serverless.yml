@@ -1,0 +1,204 @@
+Resources:
+    DbSecret:
+     Type: "AWS::SecretsManager::Secret"
+     Properties:
+       Name: ${self:custom.secretName}
+       KmsKeyId: "alias/aws/secretsmanager"
+       GenerateSecretString:
+         SecretStringTemplate: '{"username": "adminPostgres"}'
+         GenerateStringKey: 'password'
+         PasswordLength: 16
+         ExcludeCharacters: '"@/\'
+    VPC:
+      Type: 'AWS::EC2::VPC'
+      Properties:
+        CidrBlock: !Sub '10.0.0.0/16'
+        EnableDnsSupport: true
+        EnableDnsHostnames: true
+        InstanceTenancy: default
+    InternetGateway:
+      Type: 'AWS::EC2::InternetGateway'
+      Properties:
+        Tags:
+        - Key: Name
+          Value: !Sub '10.0.0.0/16'
+    VPCGatewayAttachment:
+      Type: 'AWS::EC2::VPCGatewayAttachment'
+      Properties:
+        VpcId: !Ref VPC
+        InternetGatewayId: !Ref InternetGateway
+    SubnetAPublic:
+      Type: 'AWS::EC2::Subnet'
+      Properties:
+        AvailabilityZone: !Select [0, !GetAZs '']
+        CidrBlock: !Sub '10.0.0.0/20'
+        MapPublicIpOnLaunch: true
+        VpcId: !Ref VPC
+    SubnetAPrivate:
+      Type: 'AWS::EC2::Subnet'
+      Properties:
+        AvailabilityZone: !Select [0, !GetAZs '']
+        CidrBlock: !Sub '10.0.128.0/20'
+        VpcId: !Ref VPC
+    SubnetBPublic:
+      Type: 'AWS::EC2::Subnet'
+      Properties:
+        AvailabilityZone: !Select [1, !GetAZs '']
+        CidrBlock: !Sub '10.0.16.0/20'
+        MapPublicIpOnLaunch: true
+        VpcId: !Ref VPC
+    SubnetBPrivate:
+      Type: 'AWS::EC2::Subnet'
+      Properties:
+        AvailabilityZone: !Select [1, !GetAZs '']
+        CidrBlock: !Sub '10.0.144.0/20'
+        VpcId: !Ref VPC
+    RouteTableAPublic:
+      Type: 'AWS::EC2::RouteTable'
+      Properties:
+        VpcId: !Ref VPC
+    RouteTableAPrivate:
+      Type: 'AWS::EC2::RouteTable'
+      Properties:
+        VpcId: !Ref VPC
+    RouteTableBPublic:
+      Type: 'AWS::EC2::RouteTable'
+      Properties:
+        VpcId: !Ref VPC
+    RouteTableBPrivate:
+      Type: 'AWS::EC2::RouteTable'
+      Properties:
+        VpcId: !Ref VPC
+    RouteTableAssociationAPublic:
+      Type: 'AWS::EC2::SubnetRouteTableAssociation'
+      Properties:
+        SubnetId: !Ref SubnetAPublic
+        RouteTableId: !Ref RouteTableAPublic
+    RouteTableAssociationAPrivate:
+      Type: 'AWS::EC2::SubnetRouteTableAssociation'
+      Properties:
+        SubnetId: !Ref SubnetAPrivate
+        RouteTableId: !Ref RouteTableAPrivate
+    RouteTableAssociationBPublic:
+      Type: 'AWS::EC2::SubnetRouteTableAssociation'
+      Properties:
+        SubnetId: !Ref SubnetBPublic
+        RouteTableId: !Ref RouteTableBPublic
+    RouteTableAssociationBPrivate:
+      Type: 'AWS::EC2::SubnetRouteTableAssociation'
+      Properties:
+        SubnetId: !Ref SubnetBPrivate
+        RouteTableId: !Ref RouteTableBPrivate
+    RouteTablePublicAInternetRoute:
+      Type: 'AWS::EC2::Route'
+      DependsOn: VPCGatewayAttachment
+      Properties:
+        RouteTableId: !Ref RouteTableAPublic
+        DestinationCidrBlock: '0.0.0.0/0'
+        GatewayId: !Ref InternetGateway
+    RouteTablePublicBInternetRoute:
+      Type: 'AWS::EC2::Route'
+      DependsOn: VPCGatewayAttachment
+      Properties:
+        RouteTableId: !Ref RouteTableBPublic
+        DestinationCidrBlock: '0.0.0.0/0'
+        GatewayId: !Ref InternetGateway
+    EIPA:
+      Type: 'AWS::EC2::EIP'
+      Properties:
+        Domain: vpc
+    EIPB:
+      Type: 'AWS::EC2::EIP'
+      Properties:
+        Domain: vpc
+    NatGatewayA:
+      Type: 'AWS::EC2::NatGateway'
+      Properties:
+        AllocationId: !GetAtt 'EIPA.AllocationId'
+        SubnetId: !Ref SubnetAPublic
+    RouteA:
+      Type: 'AWS::EC2::Route'
+      Properties:
+        RouteTableId: !Ref RouteTableAPrivate
+        DestinationCidrBlock: '0.0.0.0/0'
+        NatGatewayId: !Ref NatGatewayA
+    NatGatewayB:
+      Type: 'AWS::EC2::NatGateway'
+      Properties:
+        AllocationId: !GetAtt 'EIPB.AllocationId'
+        SubnetId: !Ref SubnetBPublic
+    RouteB:
+      Type: 'AWS::EC2::Route'
+      Properties:
+        RouteTableId: !Ref RouteTableBPrivate
+        DestinationCidrBlock: '0.0.0.0/0'
+        NatGatewayId: !Ref NatGatewayB
+    NatGatewayLambdaSecurityGroup:
+      Type: 'AWS::EC2::SecurityGroup'
+      Properties:
+        VpcId: !Ref VPC
+        GroupDescription: 'Security group for NAT Gateway Lambda'
+    Database:
+      Type: AWS::RDS::DBCluster
+      Properties:
+        DatabaseName: ${self:custom.dbName}
+        Engine: aurora-postgresql
+        EngineMode: serverless
+        MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref DbSecret, ':SecretString:username}}' ]]
+        MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref DbSecret, ':SecretString:password}}' ]]
+        EnableHttpEndpoint: true
+        ScalingConfiguration:
+          AutoPause: true
+          MaxCapacity: 4
+          MinCapacity: 2
+          SecondsUntilAutoPause: 300
+        DBSubnetGroupName:
+          Ref: DBSubnetGroup
+        VpcSecurityGroupIds:
+          - Ref: DatabaseVpcSecurityGroup
+    DBSubnetGroup:
+      Type: "AWS::RDS::DBSubnetGroup"
+      Properties:
+        DBSubnetGroupDescription: "database subnet group"
+        SubnetIds:
+          - Ref: SubnetAPrivate
+          - Ref: SubnetBPrivate
+    DatabaseVpcSecurityGroup:
+      Type: "AWS::EC2::SecurityGroup"
+      Properties:
+        GroupName: DBSecurityGroup
+        GroupDescription: Allow local access
+        SecurityGroupIngress:
+          - CidrIp: 10.0.0.0/16
+            IpProtocol: tcp
+            FromPort: 3306
+            ToPort: 3306
+        VpcId:
+          Ref: VPC
+Outputs:
+    SecretArn:
+      Value:  !Ref DbSecret
+      Export:
+        Name: DbSecretArn
+    DBClusterArnRAW:
+      # Value:  !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:cluster/${!Ref DBClusterIdentifier}
+      Value:  
+        Fn::Join:  
+         - ""  
+         - - !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:"  
+           - !Select [0, !Split ['.', !GetAtt Database.Endpoint.Address]] 
+      Export:
+        Name: DBClusterArnRAW  
+    # DBClusterIdentifier:
+    #   Value:  
+    #   Export:
+    #     Name: DBClusterIdentifier  
+
+
+
+    # #appSync data source role
+    # - ${file(resources/appsync.yml)}
+    # rds
+    # - ${file(resources/rds.yml)}
+    # # Cognito
+    # - ${file(resources/cognito.yml)}

@@ -1,0 +1,45 @@
+name: appsyncmasterclass
+schema: schema.api.graphql
+authenticationType: AMAZON_COGNITO_USER_POOLS
+userPoolConfig:
+  awsRegion: eu-west-1
+  defaultAction: ALLOW
+  userPoolId: !Ref CognitoUserPool
+mappingTemplatesLocation: mapping-templates
+mappingTemplates:
+  - type: Query
+    field: getMyProfile
+    dataSource: usersTable
+    # request: false
+    # response: false
+
+dataSources:
+  - type: NONE
+    name: none
+
+  - type: AWS_LAMBDA
+    name: getMyProfileFunction
+    config:
+      functionName: myProfile
+  
+  - type: AMAZON_DYNAMODB
+    name: usersTable
+    config:
+      tableName: !Ref UsersTable
+
+  # - type: "RELATIONAL_DATABASE"
+  #   name: mydatabase
+  #   config:
+  #     databaseName: simpleCMS
+  #     dbClusterIdentifier:
+  #       Ref: Database
+  #     awsSecretStoreArn:
+  #       Ref: DbSecret
+  #     config:
+  #       iamRoleStatements:
+  #         - Effect: Allow
+  #           Action: rds-data:*
+  #           Resource: !GetAtt Database.Arn
+  #         - Effect: Allow
+  #           Action: secretsmanager:*
+  #           Resource: !GetAtt DbSecret.Arn
